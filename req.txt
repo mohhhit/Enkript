@@ -1,0 +1,9 @@
+Requirements:-
+
+App list shall be filtered
+Every app can have multiple accounts/profiles
+option for adding additional apps / custom apps / website
+strong Random password Generator and customizable password length (online/offline)
+cross-platform compatibility (Android/Windows)
+sleek and polished UI
+Automatic password saving and entering (Biometric Auth required) for every auth-based app
