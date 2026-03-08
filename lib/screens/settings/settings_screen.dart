@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/vault_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../services/biometric_service.dart';
+import '../auth/cloud_auth_screen.dart';
 import '../auth/login_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -29,6 +31,10 @@ class SettingsScreen extends StatelessWidget {
           
           const SizedBox(height: 16),
           _buildSectionHeader(context, 'Data'),
+          _buildSyncWithCloudTile(context),
+          const Divider(),
+          _buildRemoveDuplicatesTile(context),
+          const Divider(),
           _buildExportDataTile(context),
           const Divider(),
           _buildImportDataTile(context),
@@ -38,6 +44,8 @@ class SettingsScreen extends StatelessWidget {
           
           const SizedBox(height: 16),
           _buildSectionHeader(context, 'Account'),
+          _buildCloudAccountTile(context),
+          const Divider(),
           _buildSignOutTile(context),
           const Divider(),
           
@@ -74,7 +82,7 @@ class SettingsScreen extends StatelessWidget {
           subtitle: const Text('Use biometric authentication to unlock'),
           value: authProvider.isBiometricEnabled,
           onChanged: BiometricService.instance.isAvailable
-              ? (value) => authProvider.toggleBiometric(value)
+              ? (value) async => await authProvider.toggleBiometric(value)
               : null,
         );
       },
@@ -142,6 +150,70 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
+  Widget _buildSyncWithCloudTile(BuildContext context) {
+    return Consumer<AuthProvider>(
+      builder: (context, authProvider, _) {
+        // Only show sync option if user is authenticated and Firebase is available
+        if (!authProvider.isFirebaseAvailable || !authProvider.isAuthenticated) {
+          return const SizedBox.shrink();
+        }
+
+        return ListTile(
+          leading: const Icon(Icons.cloud_sync, color: Colors.blue),
+          title: const Text('Sync with Cloud'),
+          subtitle: const Text('Download and merge credentials from cloud'),
+          onTap: () async {
+            try {
+              // Show loading indicator
+              showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (context) => const Center(
+                  child: Card(
+                    child: Padding(
+                      padding: EdgeInsets.all(24.0),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CircularProgressIndicator(),
+                          SizedBox(height: 16),
+                          Text('Syncing with cloud...'),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+
+              // Download from cloud
+              await context.read<VaultProvider>().downloadFromCloud();
+
+              if (context.mounted) {
+                Navigator.pop(context); // Close loading dialog
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('✅ Credentials synced successfully'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              }
+            } catch (e) {
+              if (context.mounted) {
+                Navigator.pop(context); // Close loading dialog
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Sync failed: $e'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            }
+          },
+        );
+      },
+    );
+  }
+
   Widget _buildClearDataTile(BuildContext context) {
     return ListTile(
       leading: const Icon(Icons.delete_forever, color: Colors.red),
@@ -170,11 +242,114 @@ class SettingsScreen extends StatelessWidget {
         );
 
         if (confirmed == true && context.mounted) {
-          // TODO: Implement clear data
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Feature coming soon')),
+          try {
+            await context.read<VaultProvider>().clearAllCredentials();
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('All credentials cleared'),
+                  backgroundColor: Colors.green,
+                ),
+              );
+            }
+          } catch (e) {
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Error clearing data: $e'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+          }
+        }
+      },
+    );
+  }
+
+  Widget _buildRemoveDuplicatesTile(BuildContext context) {
+    return ListTile(
+      leading: const Icon(Icons.content_copy, color: Colors.orange),
+      title: const Text('Remove Duplicates'),
+      subtitle: const Text('Clean up duplicate credentials'),
+      onTap: () async {
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Remove Duplicates?'),
+            content: const Text(
+              'This will keep only one copy of each credential based on app name, username, and profile name.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Remove'),
+              ),
+            ],
+          ),
+        );
+
+        if (confirmed == true && context.mounted) {
+          try {
+            final removed = await context.read<VaultProvider>().removeDuplicates();
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Removed $removed duplicate(s)'),
+                  backgroundColor: Colors.green,
+                ),
+              );
+            }
+          } catch (e) {
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Error removing duplicates: $e'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+          }
+        }
+      },
+    );
+  }
+
+  Widget _buildCloudAccountTile(BuildContext context) {
+    return Consumer<AuthProvider>(
+      builder: (context, authProvider, _) {
+        if (!authProvider.isFirebaseAvailable) {
+          return ListTile(
+            leading: const Icon(Icons.cloud_off),
+            title: const Text('Offline Mode'),
+            subtitle: const Text('Cloud sync not available on this platform'),
           );
         }
+
+        if (authProvider.isAuthenticated && authProvider.userEmail != null) {
+          return ListTile(
+            leading: const Icon(Icons.cloud_done, color: Colors.green),
+            title: const Text('Cloud Account'),
+            subtitle: Text(authProvider.userEmail!),
+            trailing: const Icon(Icons.verified, color: Colors.green, size: 20),
+          );
+        }
+
+        return ListTile(
+          leading: const Icon(Icons.cloud_off),
+          title: const Text('Not Signed In'),
+          subtitle: const Text('Tap to sign in to cloud'),
+          onTap: () {
+            // TODO: Navigate to cloud auth screen
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Please restart the app to sign in')),
+            );
+          },
+        );
       },
     );
   }
@@ -204,10 +379,18 @@ class SettingsScreen extends StatelessWidget {
         );
 
         if (confirmed == true && context.mounted) {
-          await context.read<AuthProvider>().signOut();
+          final authProvider = context.read<AuthProvider>();
+          await authProvider.signOut();
+          
           if (context.mounted) {
+            // On Firebase platforms, go to cloud auth screen
+            // On offline platforms (Windows), go to login screen
+            final destination = authProvider.isFirebaseAvailable
+                ? const CloudAuthScreen()
+                : const LoginScreen();
+            
             Navigator.of(context).pushAndRemoveUntil(
-              MaterialPageRoute(builder: (_) => const LoginScreen()),
+              MaterialPageRoute(builder: (_) => destination),
               (route) => false,
             );
           }

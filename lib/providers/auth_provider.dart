@@ -1,66 +1,109 @@
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-// import 'package:firebase_auth/firebase_auth.dart'; // Commented out for local testing
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:hive/hive.dart';
 import '../services/encryption_service.dart';
 
 class AuthProvider extends ChangeNotifier {
-  // final FirebaseAuth _auth = FirebaseAuth.instance; // Commented out for local testing
-  // User? _user; // Commented out for local testing
+  FirebaseAuth? _auth;
+  User? _user;
   bool _isAuthenticated = false;
   bool _isBiometricEnabled = false;
 
-  // User? get user => _user; // Commented out for local testing
+  User? get user => _user;
   bool get isAuthenticated => _isAuthenticated;
   bool get isBiometricEnabled => _isBiometricEnabled;
+  String? get userEmail => _user?.email;
+  String? get userId => _user?.uid;
+  
+  /// Check if Firebase is available on this platform
+  bool get isFirebaseAvailable => true; // Firebase now supports all platforms
+  
+  /// Get Auth instance (lazy init)
+  FirebaseAuth? get auth {
+    if (!isFirebaseAvailable) return null;
+    _auth ??= FirebaseAuth.instance;
+    return _auth;
+  }
 
   AuthProvider() {
     _init();
   }
 
-  void _init() {
-    // _auth.authStateChanges().listen((User? user) { // Commented out for local testing
-    //   _user = user;
-    //   _isAuthenticated = user != null;
-    //   notifyListeners();
-    // });
-    // For local testing, mark as authenticated
-    _isAuthenticated = true;
+  Future<void> _init() async {
+    // Load biometric preference
+    await _loadBiometricPreference();
+    if (!isFirebaseAvailable) {
+      // Offline mode - authenticate with master password only
+      _isAuthenticated = true; // Will be verified with master password
+      print('ℹ️ Running in offline mode - no cloud authentication');
+      return;
+    }
+    
+    final authInstance = auth;
+    if (authInstance != null) {
+      authInstance.authStateChanges().listen((User? user) {
+        _user = user;
+        _isAuthenticated = user != null;
+        notifyListeners();
+      });
+    }
   }
 
   /// Sign up with email and password
   Future<bool> signUp(String email, String password) async {
-    // For local testing, always return true
-    return true;
-    // try {
-    //   await _auth.createUserWithEmailAndPassword(
-    //     email: email,
-    //     password: password,
-    //   );
-    //   return true;
-    // } catch (e) {
-    //   print('Sign up error: $e');
-    //   return false;
-    // }
+    if (!isFirebaseAvailable) {
+      print('ℹ️ Offline mode - no cloud account needed');
+      return true; // In offline mode, just use master password
+    }
+    
+    try {
+      final authInstance = auth;
+      if (authInstance == null) return false;
+      
+      await authInstance.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+      return true;
+    } catch (e) {
+      print('❌ Sign up error: $e');
+      return false;
+    }
   }
 
   /// Sign in with email and password
   Future<bool> signIn(String email, String password) async {
-    // For local testing, always return true
-    return true;
-    // try {
-    //   await _auth.signInWithEmailAndPassword(
-    //     email: email,
-    //     password: password,
-    //   );
-    //   return true;
-    // } catch (e) {
-    //   print('Sign in error: $e');
-    //   return false;
-    // }
+    if (!isFirebaseAvailable) {
+      print('ℹ️ Offline mode - no cloud sign in needed');
+      return true; // In offline mode, just use master password
+    }
+    
+    try {
+      final authInstance = auth;
+      if (authInstance == null) return false;
+      
+      await authInstance.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+      return true;
+    } catch (e) {
+      print('❌ Sign in error: $e');
+      return false;
+    }
   }
 
   /// Sign out
   Future<void> signOut() async {
-    // await _auth.signOut(); // Commented out for local testing
+    if (isFirebaseAvailable) {
+      final authInstance = auth;
+      if (authInstance != null) {
+        await authInstance.signOut();
+      }
+    }
+    
     await EncryptionService.instance.clearKeys();
     _isAuthenticated = false;
     notifyListeners();
@@ -81,9 +124,28 @@ class AuthProvider extends ChangeNotifier {
     return await EncryptionService.instance.isMasterPasswordSet();
   }
 
+  /// Load biometric preference from storage
+  Future<void> _loadBiometricPreference() async {
+    try {
+      final box = await Hive.openBox('secure_storage');
+      _isBiometricEnabled = box.get('biometric_enabled', defaultValue: false) as bool;
+      notifyListeners();
+    } catch (e) {
+      print('Error loading biometric preference: $e');
+      _isBiometricEnabled = false;
+    }
+  }
+
   /// Toggle biometric authentication
-  void toggleBiometric(bool enabled) {
+  Future<void> toggleBiometric(bool enabled) async {
     _isBiometricEnabled = enabled;
+    try {
+      final box = await Hive.openBox('secure_storage');
+      await box.put('biometric_enabled', enabled);
+      print('✅ Biometric preference saved: $enabled');
+    } catch (e) {
+      print('Error saving biometric preference: $e');
+    }
     notifyListeners();
   }
 }

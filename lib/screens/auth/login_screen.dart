@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/biometric_service.dart';
+import '../../widgets/responsive_container.dart';
 import '../home/home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -15,11 +16,26 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
   bool _isLoading = false;
+  bool _isBiometricAvailable = false;
+  bool _isBiometricLoading = false;
 
   @override
   void initState() {
     super.initState();
-    _tryBiometricAuth();
+    _checkBiometric();
+  }
+
+  Future<void> _checkBiometric() async {
+    print('🔵 Checking biometric availability...');
+    final available = await BiometricService.instance.isAvailable;
+    print('🔵 Biometric available: $available');
+    
+    if (mounted) {
+      setState(() => _isBiometricAvailable = available);
+    }
+    
+    // Don't auto-attempt biometric on screen load - let user manually trigger it
+    // This prevents issues with dialog appearing before screen is fully rendered
   }
 
   @override
@@ -29,14 +45,53 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _tryBiometricAuth() async {
-    final authProvider = context.read<AuthProvider>();
-    if (!authProvider.isBiometricEnabled) return;
-
-    final authenticated = await BiometricService.instance.authenticate();
-    if (authenticated && mounted) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const HomeScreen()),
+    if (_isBiometricLoading) return; // Prevent double-tap
+    
+    print('🔵 Biometric button pressed');
+    print('🔵 Biometric available: $_isBiometricAvailable');
+    
+    if (!_isBiometricAvailable) {
+      _showError('Biometric authentication not available on this device');
+      return;
+    }
+    
+    // Check if biometrics are enrolled
+    final biometrics = BiometricService.instance.availableBiometrics;
+    print('🔵 Enrolled biometrics: $biometrics');
+    
+    if (biometrics.isEmpty) {
+      _showError('Please enroll fingerprint in your device settings first');
+      return;
+    }
+    
+    setState(() => _isBiometricLoading = true);
+    
+    try {
+      print('🔐 Calling BiometricService.authenticate()...');
+      final authenticated = await BiometricService.instance.authenticate(
+        localizedReason: 'Unlock Enkript',
       );
+      
+      print('🔵 Authentication result: $authenticated');
+      
+      if (mounted) {
+        setState(() => _isBiometricLoading = false);
+        
+        if (authenticated) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (_) => const HomeScreen()),
+          );
+        } else {
+          print('⚠️ Authentication returned false');
+          _showError('Biometric authentication failed. Please try again.');
+        }
+      }
+    } catch (e) {
+      print('❌ Error in _tryBiometricAuth: $e');
+      if (mounted) {
+        setState(() => _isBiometricLoading = false);
+        _showError('Error: ${e.toString()}');
+      }
     }
   }
 
@@ -51,22 +106,26 @@ class _LoginScreenState extends State<LoginScreen> {
     final authProvider = context.read<AuthProvider>();
     final isValid = await authProvider.verifyMasterPassword(_passwordController.text);
 
-    setState(() => _isLoading = false);
+    if (mounted) {
+      setState(() => _isLoading = false);
 
-    if (isValid && mounted) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const HomeScreen()),
-      );
-    } else {
-      _showError('Invalid master password');
+      if (isValid) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const HomeScreen()),
+        );
+      } else {
+        _showError('Invalid master password');
+      }
     }
   }
 
   void _showError(String message) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
         backgroundColor: Colors.red,
+        duration: const Duration(seconds: 3),
       ),
     );
   }
@@ -75,8 +134,8 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
+        child: ResponsiveContainer(
+          maxWidth: 500,
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -134,16 +193,24 @@ class _LoginScreenState extends State<LoginScreen> {
                         style: TextStyle(fontSize: 16),
                       ),
               ),
-              if (context.read<AuthProvider>().isBiometricEnabled) ...[
+              if (_isBiometricAvailable) ...[
                 const SizedBox(height: 16),
                 OutlinedButton.icon(
-                  onPressed: _tryBiometricAuth,
-                  icon: Icon(
-                    BiometricService.instance.hasFingerprint
-                        ? Icons.fingerprint
-                        : Icons.face,
-                  ),
-                  label: Text('Use ${BiometricService.instance.getBiometricTypeName()}'),
+                  onPressed: _isBiometricLoading ? null : _tryBiometricAuth,
+                  icon: _isBiometricLoading
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Icon(
+                          BiometricService.instance.hasFingerprint
+                              ? Icons.fingerprint
+                              : Icons.face,
+                        ),
+                  label: Text(_isBiometricLoading
+                      ? 'Authenticating...'
+                      : 'Use ${BiometricService.instance.getBiometricTypeName()}'),
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 16),
                   ),

@@ -48,6 +48,11 @@ GoogleService-Info.plist
 
 # Environment variables
 .env
+
+# Signing keys (DO NOT COMMIT)
+*.jks
+*.keystore
+key.properties
 .env.local
 .env.*.local
 

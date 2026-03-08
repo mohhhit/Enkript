@@ -27,13 +27,13 @@ dependencies:
   encrypt: ^5.0.3
   crypto: ^3.0.3
   
-  # Cloud Services (commented out for local testing)
-  # firebase_core: ^2.24.2
-  # firebase_auth: ^4.16.0
-  # cloud_firestore: ^4.14.0
+  # Cloud Services (Updated for Windows compatibility)
+  firebase_core: ^3.8.1
+  firebase_auth: ^5.3.4
+  cloud_firestore: ^5.6.1
   
-  # Biometric Authentication (commented out - causing symlink issues)
-  # local_auth: ^2.1.8
+  # Biometric Authentication
+  local_auth: ^2.1.8
   
   # Password Generation
   uuid: ^4.3.3

@@ -1,9 +1,12 @@
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-// import 'package:firebase_core/firebase_core.dart'; // Commented out for local testing
+import 'package:firebase_core/firebase_core.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 import 'config/theme.dart';
+import 'firebase_options.dart';
 import 'models/credential.dart';
 import 'providers/auth_provider.dart';
 import 'providers/vault_provider.dart';
@@ -21,8 +24,16 @@ void main() async {
   // Register Hive adapters
   Hive.registerAdapter(CredentialAdapter());
   
-  // Initialize Firebase (commented out for local testing)
-  // await Firebase.initializeApp();
+  // Initialize Firebase on all platforms
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    print('✅ Firebase initialized successfully');
+  } catch (e) {
+    print('⚠️ Firebase initialization failed: $e');
+    print('   Running in offline mode - local storage only');
+  }
   
   // Initialize Services
   await EncryptionService.instance.initialize();

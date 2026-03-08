@@ -26,6 +26,7 @@ class _AddCredentialScreenState extends State<AddCredentialScreen> {
   final _notesController = TextEditingController();
 
   bool _obscurePassword = true;
+  bool _isSaving = false;
   String? _selectedCategory;
   int _passwordStrength = 0;
 
@@ -78,6 +79,9 @@ class _AddCredentialScreenState extends State<AddCredentialScreen> {
 
   Future<void> _saveCredential() async {
     if (!_formKey.currentState!.validate()) return;
+    if (_isSaving) return; // Prevent duplicate saves
+
+    setState(() => _isSaving = true);
 
     final encryptedPassword = EncryptionService.instance.encrypt(_passwordController.text);
 
@@ -108,13 +112,15 @@ class _AddCredentialScreenState extends State<AddCredentialScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(widget.credential == null
-                ? 'Credential added successfully'
+                ? 'Credential saved successfully'
                 : 'Credential updated successfully'),
             backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
           ),
         );
       }
     } catch (e) {
+      setState(() => _isSaving = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -145,10 +151,20 @@ class _AddCredentialScreenState extends State<AddCredentialScreen> {
       appBar: AppBar(
         title: Text(widget.credential == null ? 'Add Credential' : 'Edit Credential'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.check),
-            onPressed: _saveCredential,
-          ),
+          if (_isSaving)
+            const Padding(
+              padding: EdgeInsets.all(16.0),
+              child: SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+              ),
+            )
+          else
+            IconButton(
+              icon: const Icon(Icons.check),
+              onPressed: _saveCredential,
+            ),
         ],
       ),
       body: Form(

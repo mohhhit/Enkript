@@ -1,5 +1,7 @@
-// import 'package:cloud_firestore/cloud_firestore.dart'; // Commented out for local testing
-// import 'package:firebase_auth/firebase_auth.dart'; // Commented out for local testing
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../models/credential.dart';
 
 class CloudSyncService {
@@ -9,47 +11,164 @@ class CloudSyncService {
 
   static CloudSyncService get instance => _instance;
 
-  // final FirebaseFirestore _firestore = FirebaseFirestore.instance; // Commented out for local testing
-  // final FirebaseAuth _auth = FirebaseAuth.instance; // Commented out for local testing
+  FirebaseFirestore? _firestore;
+  FirebaseAuth? _auth;
+  
+  /// Check if Firebase is available on this platform
+  bool get isFirebaseAvailable => true; // Firebase now supports all platforms
+  
+  /// Get Firestore instance (lazy init)
+  FirebaseFirestore? get firestore {
+    if (!isFirebaseAvailable) return null;
+    _firestore ??= FirebaseFirestore.instance;
+    return _firestore;
+  }
+  
+  /// Get Auth instance (lazy init)
+  FirebaseAuth? get auth {
+    if (!isFirebaseAvailable) return null;
+    _auth ??= FirebaseAuth.instance;
+    return _auth;
+  }
 
   /// Get user's credentials collection reference
-  // CollectionReference? _getUserCredentialsCollection() { // Commented out for local testing
-  //   final user = _auth.currentUser;
-  //   if (user == null) return null;
-  //   return _firestore.collection('users').doc(user.uid).collection('credentials');
-  // }
+  CollectionReference? _getUserCredentialsCollection() {
+    if (!isFirebaseAvailable) return null;
+    final authInstance = auth;
+    final firestoreInstance = firestore;
+    if (authInstance == null || firestoreInstance == null) return null;
+    
+    final user = authInstance.currentUser;
+    if (user == null) return null;
+    return firestoreInstance.collection('users').doc(user.uid).collection('credentials');
+  }
 
-  /// Sync a single credential to cloud (disabled for local testing)
+  /// Sync a single credential to cloud
   Future<void> syncCredential(Credential credential) async {
-    // Cloud sync disabled for local testing
-    print('Cloud sync disabled - credential saved locally only');
-    return;
+    try {
+      if (!isFirebaseAvailable) {
+        print('ℹ️ Cloud sync not available - stored locally only');
+        return;
+      }
+      
+      final collection = _getUserCredentialsCollection();
+      if (collection == null) {
+        print('⚠️ User not authenticated - cannot sync to cloud');
+        return;
+      }
+      
+      print('☁️ Syncing credential to cloud: ${credential.appName} for user ${auth?.currentUser?.uid}');
+      await collection.doc(credential.id).set(credential.toMap());
+      print('✅ Credential synced to cloud: ${credential.appName}');
+    } catch (e) {
+      print('❌ Cloud sync error: $e');
+      // Don't rethrow - credential is still saved locally
+    }
   }
 
-  /// Delete credential from cloud (disabled for local testing)
+  /// Delete credential from cloud
   Future<void> deleteCredential(String id) async {
-    // Cloud sync disabled for local testing
-    print('Cloud sync disabled - credential deleted locally only');
-    return;
+    try {
+      if (!isFirebaseAvailable) {
+        print('ℹ️ Cloud sync not available - deleted locally only');
+        return;
+      }
+      
+      final collection = _getUserCredentialsCollection();
+      if (collection == null) {
+        print('User not authenticated - cannot delete from cloud');
+        return;
+      }
+      
+      await collection.doc(id).delete();
+      print('✅ Credential deleted from cloud: $id');
+    } catch (e) {
+      print('⚠️ Cloud delete error (deleted locally): $e');
+      // Don't rethrow - credential is still deleted locally
+    }
   }
 
-  /// Sync all local credentials to cloud (disabled for local testing)
+  /// Sync all local credentials to cloud
   Future<void> syncAll(List<Credential> credentials) async {
-    // Cloud sync disabled for local testing
-    print('Cloud sync disabled - ${credentials.length} credentials stored locally');
-    return;
+    try {
+      if (!isFirebaseAvailable) {
+        print('ℹ️ Cloud sync not available on this platform - stored locally');
+        return;
+      }
+      
+      final collection = _getUserCredentialsCollection();
+      final firestoreInstance = firestore;
+      if (collection == null || firestoreInstance == null) {
+        print('User not authenticated - cannot sync to cloud');
+        return;
+      }
+      
+      final batch = firestoreInstance.batch();
+      for (final credential in credentials) {
+        final docRef = collection.doc(credential.id);
+        batch.set(docRef, credential.toMap());
+      }
+      
+      await batch.commit();
+      print('✅ Synced ${credentials.length} credentials to cloud');
+    } catch (e) {
+      print('Error syncing all credentials to cloud: $e');
+      rethrow;
+    }
   }
 
-  /// Download all credentials from cloud (disabled for local testing)
+  /// Download all credentials from cloud
   Future<List<Credential>> downloadAll() async {
-    // Cloud sync disabled for local testing
-    print('Cloud sync disabled - no cloud credentials to download');
-    return [];
+    try {
+      if (!isFirebaseAvailable) {
+        print('ℹ️ Cloud sync not available - using local data only');
+        return [];
+      }
+      
+      final collection = _getUserCredentialsCollection();
+      if (collection == null) {
+        print('⚠️ User not authenticated - cannot download from cloud');
+        return [];
+      }
+      
+      final user = auth?.currentUser;
+      print('📥 Downloading credentials for user: ${user?.uid}');
+      
+      final snapshot = await collection.get();
+      print('📦 Firestore returned ${snapshot.docs.length} documents');
+      
+      final credentials = snapshot.docs
+          .map((doc) {
+            try {
+              return Credential.fromMap(doc.data() as Map<String, dynamic>);
+            } catch (e) {
+              print('⚠️ Error parsing credential ${doc.id}: $e');
+              return null;
+            }
+          })
+          .whereType<Credential>() // Filter out nulls
+          .toList();
+      
+      print('✅ Downloaded ${credentials.length} credentials from cloud');
+      return credentials;
+    } catch (e, stackTrace) {
+      print('❌ Cloud download error: $e');
+      print('Stack trace: $stackTrace');
+      return [];
+    }
   }
 
-  /// Listen to real-time changes (disabled for local testing)
+  /// Listen to real-time changes
   Stream<List<Credential>>? watchCredentials() {
-    // Cloud sync disabled for local testing
-    return null;
+    if (!isFirebaseAvailable) return null;
+    
+    final collection = _getUserCredentialsCollection();
+    if (collection == null) return null;
+    
+    return collection.snapshots().map((snapshot) {
+      return snapshot.docs
+          .map((doc) => Credential.fromMap(doc.data() as Map<String, dynamic>))
+          .toList();
+    });
   }
 }

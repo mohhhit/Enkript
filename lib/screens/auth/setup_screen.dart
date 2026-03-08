@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/biometric_service.dart';
+import '../../widgets/responsive_container.dart';
 import '../home/home_screen.dart';
 
 class SetupScreen extends StatefulWidget {
@@ -21,6 +22,19 @@ class _SetupScreenState extends State<SetupScreen> {
   final int _currentStep = 0;
 
   @override
+  void initState() {
+    super.initState();
+    _checkBiometric();
+  }
+
+  Future<void> _checkBiometric() async {
+    final isAvailable = await BiometricService.instance.isAvailable;
+    if (isAvailable) {
+      setState(() => _enableBiometric = true); // Auto-enable if available
+    }
+  }
+
+  @override
   void dispose() {
     _masterPasswordController.dispose();
     _confirmPasswordController.dispose();
@@ -37,7 +51,7 @@ class _SetupScreenState extends State<SetupScreen> {
     
     // Enable biometric if selected
     if (_enableBiometric) {
-      authProvider.toggleBiometric(true);
+      await authProvider.toggleBiometric(true);
     }
 
     if (!mounted) return;
@@ -52,8 +66,8 @@ class _SetupScreenState extends State<SetupScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
+        child: ResponsiveContainer(
+          maxWidth: 500,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -98,25 +112,44 @@ class _SetupScreenState extends State<SetupScreen> {
   }
 
   Widget _buildInfoCard() {
+    final authProvider = context.read<AuthProvider>();
+    final isCloudEnabled = authProvider.isFirebaseAvailable && authProvider.isAuthenticated;
+    
     return Card(
       color: Theme.of(context).colorScheme.primaryContainer,
       child: Padding(
         padding: const EdgeInsets.all(16.0),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(
-              Icons.info_outline,
-              color: Theme.of(context).colorScheme.primary,
+            Row(
+              children: [
+                Icon(
+                  Icons.info_outline,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Text(
+                    'Your master password encrypts all your data. Make it strong and memorable!',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onPrimaryContainer,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Text(
-                'Your master password encrypts all your data. Make it strong and memorable!',
+            if (isCloudEnabled) ...[
+              const SizedBox(height: 12),
+              Text(
+                'Note: This is different from your cloud account password. The master password encrypts your data locally.',
                 style: TextStyle(
                   color: Theme.of(context).colorScheme.onPrimaryContainer,
+                  fontSize: 12,
                 ),
               ),
-            ),
+            ],
           ],
         ),
       ),

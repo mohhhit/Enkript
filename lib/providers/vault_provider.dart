@@ -38,11 +38,12 @@ class VaultProvider extends ChangeNotifier {
       await box.put(credential.id, credential);
       _credentials.add(credential);
       _applyFilters();
-      
-      // Sync to cloud
-      await CloudSyncService.instance.syncCredential(credential);
-      
       notifyListeners();
+      
+      // Sync to cloud in background (non-blocking)
+      CloudSyncService.instance.syncCredential(credential).catchError((e) {
+        print('Background sync error: $e');
+      });
     } catch (e) {
       print('Error adding credential: $e');
       rethrow;
@@ -61,11 +62,12 @@ class VaultProvider extends ChangeNotifier {
       }
       
       _applyFilters();
-      
-      // Sync to cloud
-      await CloudSyncService.instance.syncCredential(credential);
-      
       notifyListeners();
+      
+      // Sync to cloud in background (non-blocking)
+      CloudSyncService.instance.syncCredential(credential).catchError((e) {
+        print('Background sync error: $e');
+      });
     } catch (e) {
       print('Error updating credential: $e');
       rethrow;
@@ -79,11 +81,12 @@ class VaultProvider extends ChangeNotifier {
       await box.delete(id);
       _credentials.removeWhere((c) => c.id == id);
       _applyFilters();
-      
-      // Delete from cloud
-      await CloudSyncService.instance.deleteCredential(id);
-      
       notifyListeners();
+      
+      // Delete from cloud in background (non-blocking)
+      CloudSyncService.instance.deleteCredential(id).catchError((e) {
+        print('Background delete error: $e');
+      });
     } catch (e) {
       print('Error deleting credential: $e');
       rethrow;
@@ -143,6 +146,139 @@ class VaultProvider extends ChangeNotifier {
 
     _isLoading = false;
     notifyListeners();
+  }
+
+  /// Download credentials from cloud and merge with local
+  Future<void> downloadFromCloud() async {
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      print('📥 Downloading credentials from cloud...');
+      
+      // Check if cloud is available
+      if (!CloudSyncService.instance.isFirebaseAvailable) {
+        print('ℹ️ Cloud sync not available - using local data only');
+        _isLoading = false;
+        notifyListeners();
+        return;
+      }
+      
+      // Check authentication
+      if (CloudSyncService.instance.auth?.currentUser == null) {
+        print('⚠️ User not authenticated - cannot download from cloud');
+        _isLoading = false;
+        notifyListeners();
+        return;
+      }
+      
+      final cloudCredentials = await CloudSyncService.instance.downloadAll();
+      print('📦 Downloaded ${cloudCredentials.length} credentials from cloud');
+      
+      if (cloudCredentials.isEmpty) {
+        print('ℹ️ No credentials found in cloud');
+        _isLoading = false;
+        notifyListeners();
+        return;
+      }
+
+      final box = await Hive.openBox<Credential>('credentials');
+      
+      // Merge cloud credentials with local
+      final Map<String, Credential> mergedMap = {};
+      
+      // Add all local credentials
+      for (final cred in _credentials) {
+        mergedMap[cred.id] = cred;
+      }
+      
+      // Merge cloud credentials (newer ones override)
+      for (final cloudCred in cloudCredentials) {
+        final localCred = mergedMap[cloudCred.id];
+        if (localCred == null) {
+          // New credential from cloud
+          mergedMap[cloudCred.id] = cloudCred;
+        } else {
+          // Keep the newer one
+          if (cloudCred.updatedAt.isAfter(localCred.updatedAt)) {
+            mergedMap[cloudCred.id] = cloudCred;
+          }
+        }
+      }
+      
+      // Save merged credentials to local storage
+      await box.clear();
+      for (final cred in mergedMap.values) {
+        await box.put(cred.id, cred);
+      }
+      
+      _credentials = mergedMap.values.toList();
+      _applyFilters();
+      
+      print('✅ Downloaded and merged ${cloudCredentials.length} credentials from cloud');
+      print('✅ Total credentials after merge: ${_credentials.length}');
+    } catch (e, stackTrace) {
+      print('❌ Error downloading from cloud: $e');
+      print('Stack trace: $stackTrace');
+    }
+
+    _isLoading = false;
+    notifyListeners();
+  }
+
+  /// Clear all credentials
+  Future<void> clearAllCredentials() async {
+    try {
+      final box = await Hive.openBox<Credential>('credentials');
+      await box.clear();
+      _credentials.clear();
+      _filteredCredentials.clear();
+      notifyListeners();
+      print('✅ All credentials cleared');
+    } catch (e) {
+      print('Error clearing credentials: $e');
+      rethrow;
+    }
+  }
+
+  /// Remove duplicate credentials
+  Future<int> removeDuplicates() async {
+    try {
+      final box = await Hive.openBox<Credential>('credentials');
+      
+      // Group credentials by app name, username, and profile name
+      final Map<String, List<Credential>> groups = {};
+      for (final cred in _credentials) {
+        final key = '${cred.appName}|${cred.username}|${cred.profileName}'.toLowerCase();
+        groups.putIfAbsent(key, () => []).add(cred);
+      }
+      
+      int removedCount = 0;
+      
+      // For each group, keep the most recent one and delete the rest
+      for (final group in groups.values) {
+        if (group.length > 1) {
+          // Sort by updatedAt, keep the newest
+          group.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+          
+          // Delete all except the first (newest)
+          for (int i = 1; i < group.length; i++) {
+            await box.delete(group[i].id);
+            _credentials.removeWhere((c) => c.id == group[i].id);
+            removedCount++;
+          }
+        }
+      }
+      
+      _applyFilters();
+      notifyListeners();
+      
+      print('✅ Removed $removedCount duplicate credentials');
+      return removedCount;
+    } catch (e) {
+      print('Error removing duplicates: $e');
+      rethrow;
+    }
   }
 
   /// Apply filters to credentials

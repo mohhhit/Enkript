@@ -8,15 +8,30 @@ import '../credentials/credential_detail_screen.dart';
 import '../settings/settings_screen.dart';
 import '../../widgets/credential_card.dart';
 import '../../widgets/empty_state.dart';
+import '../../utils/platform_utils.dart';
+import 'desktop_home_screen.dart';
 
-class HomeScreen extends StatefulWidget {
+class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  Widget build(BuildContext context) {
+    // Use desktop layout on Windows/macOS/Linux, mobile layout on Android/iOS
+    if (PlatformUtils.isDesktop) {
+      return const DesktopHomeScreen();
+    }
+    return const MobileHomeScreen();
+  }
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class MobileHomeScreen extends StatefulWidget {
+  const MobileHomeScreen({super.key});
+
+  @override
+  State<MobileHomeScreen> createState() => _MobileHomeScreenState();
+}
+
+class _MobileHomeScreenState extends State<MobileHomeScreen> {
   final _searchController = TextEditingController();
 
   @override
