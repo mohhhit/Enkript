@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:encrypt/encrypt.dart';
 import 'package:crypto/crypto.dart';
 import 'package:hive/hive.dart';
+import 'cloud_sync_service.dart';
 
 class EncryptionService {
   static final EncryptionService _instance = EncryptionService._internal();
@@ -14,6 +15,7 @@ class EncryptionService {
   late Encrypter _encrypter;
   late IV _iv;
   bool _isInitialized = false;
+  bool _encryptionKeyGeneratedThisSession = false;
 
   Future<void> initialize() async {
     if (_isInitialized) return;
@@ -29,6 +31,9 @@ class EncryptionService {
       final key = Key.fromSecureRandom(32);
       keyString = base64Encode(key.bytes);
       await _secureBox.put('encryption_key', keyString);
+      _encryptionKeyGeneratedThisSession = true;
+    } else {
+      _encryptionKeyGeneratedThisSession = false;
     }
 
     // Get or create IV
@@ -47,6 +52,102 @@ class EncryptionService {
     _isInitialized = true;
   }
 
+  String? _getStoredEncryptionKey() {
+    return _secureBox.get('encryption_key') as String?;
+  }
+
+  Future<void> _storeEncryptionKey(String keyString) async {
+    await _secureBox.put('encryption_key', keyString);
+  }
+
+  Future<Map<String, dynamic>> _buildVaultMetadata(String password) async {
+    final keyString = _getStoredEncryptionKey();
+    if (keyString == null) {
+      throw StateError('Encryption key missing');
+    }
+
+    final wrapSalt = base64Encode(IV.fromSecureRandom(16).bytes);
+    final wrapIv = IV.fromSecureRandom(16);
+    final wrapKeyBytes = base64Decode(await deriveKeyFromPassword(password, wrapSalt));
+    final wrapEncrypter = Encrypter(AES(Key(wrapKeyBytes), mode: AESMode.cbc));
+    final wrappedKey = wrapEncrypter.encrypt(keyString, iv: wrapIv).base64;
+
+    return {
+      'masterPasswordHash': hash(password),
+      'vaultKeyWrapSalt': wrapSalt,
+      'vaultKeyWrapIv': base64Encode(wrapIv.bytes),
+      'wrappedEncryptionKey': wrappedKey,
+      'updatedAt': DateTime.now().toIso8601String(),
+    };
+  }
+
+  Future<void> _persistVaultMetadata(Map<String, dynamic> metadata, {String? userId}) async {
+    await _secureBox.put('master_password_hash', metadata['masterPasswordHash']);
+    await _secureBox.put('vault_key_wrap_salt', metadata['vaultKeyWrapSalt']);
+    await _secureBox.put('vault_key_wrap_iv', metadata['vaultKeyWrapIv']);
+    await _secureBox.put('wrapped_encryption_key', metadata['wrappedEncryptionKey']);
+
+    if (userId != null) {
+      await CloudSyncService.instance.saveVaultMetadata(userId, metadata);
+    }
+  }
+
+  /// Bind the current vault key to a master password and back it up.
+  Future<void> bindMasterPassword(String password, {String? userId}) async {
+    if (!_isInitialized) {
+      await initialize();
+    }
+
+    final metadata = await _buildVaultMetadata(password);
+    await _persistVaultMetadata(metadata, userId: userId);
+  }
+
+  /// Restore the vault encryption key from a password-wrapped backup.
+  Future<bool> restoreEncryptionKey(String password, {String? userId}) async {
+    if (!_isInitialized) {
+      _secureBox = await Hive.openBox('secure_storage');
+    }
+
+    final storedKey = _secureBox.get('encryption_key') as String?;
+    if (storedKey != null && !_encryptionKeyGeneratedThisSession) {
+      if (!_isInitialized) {
+        await initialize();
+      }
+      return true;
+    }
+
+    Map<String, dynamic>? metadata = {
+      'masterPasswordHash': _secureBox.get('master_password_hash'),
+      'vaultKeyWrapSalt': _secureBox.get('vault_key_wrap_salt'),
+      'vaultKeyWrapIv': _secureBox.get('vault_key_wrap_iv'),
+      'wrappedEncryptionKey': _secureBox.get('wrapped_encryption_key'),
+    };
+
+    if (metadata['wrappedEncryptionKey'] == null && userId != null) {
+      metadata = await CloudSyncService.instance.fetchVaultMetadata(userId);
+    }
+
+    final wrappedKey = metadata?['wrappedEncryptionKey'] as String?;
+    final wrapSalt = metadata?['vaultKeyWrapSalt'] as String?;
+    final wrapIvString = metadata?['vaultKeyWrapIv'] as String?;
+
+    if (wrappedKey == null || wrapSalt == null || wrapIvString == null) {
+      return false;
+    }
+
+    final wrapKeyBytes = base64Decode(await deriveKeyFromPassword(password, wrapSalt));
+    final wrapEncrypter = Encrypter(AES(Key(wrapKeyBytes), mode: AESMode.cbc));
+    final unwrappedKey = wrapEncrypter.decrypt64(
+      wrappedKey,
+      iv: IV(base64Decode(wrapIvString)),
+    );
+
+    await _storeEncryptionKey(unwrappedKey);
+    _encryptionKeyGeneratedThisSession = false;
+    await initialize();
+    return true;
+  }
+
   /// Encrypt a string
   String encrypt(String plainText) {
     if (!_isInitialized) {
@@ -61,6 +162,16 @@ class EncryptionService {
       throw StateError('EncryptionService not initialized');
     }
     return _encrypter.decrypt64(encryptedText, iv: _iv);
+  }
+
+  /// Try to decrypt a string without throwing.
+  String? tryDecrypt(String encryptedText) {
+    try {
+      return decrypt(encryptedText);
+    } catch (e) {
+      print('❌ Decryption error: $e');
+      return null;
+    }
   }
 
   /// Hash a string (for master password verification)
@@ -83,12 +194,12 @@ class EncryptionService {
   Future<void> clearKeys() async {
     await _secureBox.clear();
     _isInitialized = false;
+    _encryptionKeyGeneratedThisSession = false;
   }
 
   /// Store master password hash
   Future<void> storeMasterPasswordHash(String password) async {
-    final hashedPassword = hash(password);
-    await _secureBox.put('master_password_hash', hashedPassword);
+    await _secureBox.put('master_password_hash', hash(password));
   }
 
   /// Verify master password

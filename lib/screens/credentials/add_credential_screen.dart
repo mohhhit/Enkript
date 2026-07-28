@@ -29,6 +29,7 @@ class _AddCredentialScreenState extends State<AddCredentialScreen> {
   bool _isSaving = false;
   String? _selectedCategory;
   int _passwordStrength = 0;
+  String? _passwordLoadError;
 
   final List<String> _categories = [
     'Social',
@@ -53,7 +54,13 @@ class _AddCredentialScreenState extends State<AddCredentialScreen> {
     _appNameController.text = cred.appName;
     _profileNameController.text = cred.profileName;
     _usernameController.text = cred.username;
-    _passwordController.text = EncryptionService.instance.decrypt(cred.encryptedPassword);
+    final password = EncryptionService.instance.tryDecrypt(cred.encryptedPassword);
+    if (password == null) {
+      _passwordLoadError = 'Saved password could not be decrypted. Enter a new password to update this credential.';
+      _passwordController.clear();
+    } else {
+      _passwordController.text = password;
+    }
     _websiteController.text = cred.website ?? '';
     _notesController.text = cred.notes ?? '';
     _selectedCategory = cred.category;
@@ -235,6 +242,16 @@ class _AddCredentialScreenState extends State<AddCredentialScreen> {
             ),
             const SizedBox(height: 8),
             _buildPasswordStrengthIndicator(),
+            if (_passwordLoadError != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                _passwordLoadError!,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.error,
+                  fontSize: 12,
+                ),
+              ),
+            ],
             const SizedBox(height: 16),
             TextFormField(
               controller: _websiteController,

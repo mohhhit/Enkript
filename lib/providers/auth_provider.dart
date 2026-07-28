@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:hive/hive.dart';
 import '../services/encryption_service.dart';
+import '../services/cloud_sync_service.dart';
 
 class AuthProvider extends ChangeNotifier {
   FirebaseAuth? _auth;
@@ -111,17 +112,47 @@ class AuthProvider extends ChangeNotifier {
 
   /// Set master password
   Future<void> setMasterPassword(String password) async {
-    await EncryptionService.instance.storeMasterPasswordHash(password);
+    final encryptionService = EncryptionService.instance;
+    await encryptionService.bindMasterPassword(password, userId: userId);
   }
 
   /// Verify master password
   Future<bool> verifyMasterPassword(String password) async {
-    return await EncryptionService.instance.verifyMasterPassword(password);
+    final encryptionService = EncryptionService.instance;
+
+    if (await encryptionService.verifyMasterPassword(password)) {
+      return await encryptionService.restoreEncryptionKey(password, userId: userId);
+    }
+
+    final currentUserId = userId;
+    if (!isFirebaseAvailable || currentUserId == null) {
+      return false;
+    }
+
+    final cloudMetadata = await CloudSyncService.instance.fetchVaultMetadata(currentUserId);
+    final cloudHash = cloudMetadata?['masterPasswordHash'] as String?;
+    if (cloudHash == null || cloudHash != encryptionService.hash(password)) {
+      return false;
+    }
+
+    await encryptionService.storeMasterPasswordHash(password);
+    return await encryptionService.restoreEncryptionKey(password, userId: currentUserId);
   }
 
   /// Check if master password is set
   Future<bool> isMasterPasswordSet() async {
-    return await EncryptionService.instance.isMasterPasswordSet();
+    final encryptionService = EncryptionService.instance;
+    if (await encryptionService.isMasterPasswordSet()) {
+      return true;
+    }
+
+    final currentUserId = userId;
+    if (!isFirebaseAvailable || currentUserId == null) {
+      return false;
+    }
+
+    final cloudMetadata = await CloudSyncService.instance.fetchVaultMetadata(currentUserId);
+    return cloudMetadata?['masterPasswordHash'] != null;
   }
 
   /// Load biometric preference from storage

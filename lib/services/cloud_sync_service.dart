@@ -43,6 +43,12 @@ class CloudSyncService {
     return firestoreInstance.collection('users').doc(user.uid).collection('credentials');
   }
 
+  DocumentReference? _getVaultMetadataDocument(String userId) {
+    final firestoreInstance = firestore;
+    if (firestoreInstance == null) return null;
+    return firestoreInstance.collection('users').doc(userId).collection('vault').doc('meta');
+  }
+
   /// Sync a single credential to cloud
   Future<void> syncCredential(Credential credential) async {
     try {
@@ -63,6 +69,52 @@ class CloudSyncService {
     } catch (e) {
       print('❌ Cloud sync error: $e');
       // Don't rethrow - credential is still saved locally
+    }
+  }
+
+  /// Store vault recovery metadata for the signed-in user.
+  Future<void> saveVaultMetadata(String userId, Map<String, dynamic> metadata) async {
+    try {
+      if (!isFirebaseAvailable) {
+        return;
+      }
+
+      final document = _getVaultMetadataDocument(userId);
+      if (document == null) {
+        print('⚠️ Unable to store vault metadata - Firestore unavailable');
+        return;
+      }
+
+      await document.set(metadata, SetOptions(merge: true));
+      print('✅ Vault metadata saved for user: $userId');
+    } catch (e) {
+      print('❌ Vault metadata save error: $e');
+    }
+  }
+
+  /// Fetch vault recovery metadata for the signed-in user.
+  Future<Map<String, dynamic>?> fetchVaultMetadata(String userId) async {
+    try {
+      if (!isFirebaseAvailable) {
+        return null;
+      }
+
+      final document = _getVaultMetadataDocument(userId);
+      if (document == null) {
+        print('⚠️ Unable to fetch vault metadata - Firestore unavailable');
+        return null;
+      }
+
+      final snapshot = await document.get();
+      final data = snapshot.data();
+      if (data is Map<String, dynamic>) {
+        return data;
+      }
+
+      return null;
+    } catch (e) {
+      print('❌ Vault metadata fetch error: $e');
+      return null;
     }
   }
 

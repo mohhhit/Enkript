@@ -19,6 +19,7 @@ class CredentialDetailScreen extends StatefulWidget {
 class _CredentialDetailScreenState extends State<CredentialDetailScreen> {
   bool _isPasswordVisible = false;
   String? _decryptedPassword;
+  String? _passwordError;
 
   Future<void> _togglePasswordVisibility() async {
     if (!_isPasswordVisible) {
@@ -39,13 +40,27 @@ class _CredentialDetailScreenState extends State<CredentialDetailScreen> {
         return;
       }
 
-      _decryptedPassword = EncryptionService.instance.decrypt(
+      _decryptedPassword = EncryptionService.instance.tryDecrypt(
         widget.credential.encryptedPassword,
       );
+
+      if (_decryptedPassword == null) {
+        _passwordError = 'Unable to decrypt password on this device.';
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Unable to decrypt password'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
     }
 
     setState(() {
       _isPasswordVisible = !_isPasswordVisible;
+      _passwordError = null;
     });
   }
 
@@ -221,7 +236,9 @@ class _CredentialDetailScreenState extends State<CredentialDetailScreen> {
           style: TextStyle(fontSize: 12, color: Colors.grey),
         ),
         subtitle: Text(
-          _isPasswordVisible ? (_decryptedPassword ?? '') : '••••••••',
+          _isPasswordVisible
+              ? (_decryptedPassword ?? _passwordError ?? 'Unable to decrypt password')
+              : '••••••••',
           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
         ),
         trailing: Row(

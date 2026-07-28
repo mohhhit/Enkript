@@ -140,9 +140,18 @@ class _DesktopCredentialCardState extends State<DesktopCredentialCard> {
                         icon: const Icon(Icons.key, size: 20),
                         tooltip: 'Copy Password',
                         onPressed: () {
-                          final decryptedPassword = EncryptionService.instance.decrypt(
+                          final decryptedPassword = EncryptionService.instance.tryDecrypt(
                             widget.credential.encryptedPassword,
                           );
+                          if (decryptedPassword == null) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Unable to decrypt password on this device'),
+                                duration: Duration(seconds: 1),
+                              ),
+                            );
+                            return;
+                          }
                           Clipboard.setData(ClipboardData(text: decryptedPassword));
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
