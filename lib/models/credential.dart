@@ -1,43 +1,17 @@
-import 'package:hive/hive.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
-part 'credential.g.dart';
-
-@HiveType(typeId: 0)
-class Credential extends HiveObject {
-  @HiveField(0)
+class Credential {
   String id;
-
-  @HiveField(1)
   String appName;
-
-  @HiveField(2)
   String profileName;
-
-  @HiveField(3)
   String username;
-
-  @HiveField(4)
   String encryptedPassword;
-
-  @HiveField(5)
   String? website;
-
-  @HiveField(6)
   String? notes;
-
-  @HiveField(7)
   String? iconUrl;
-
-  @HiveField(8)
   DateTime createdAt;
-
-  @HiveField(9)
   DateTime updatedAt;
-
-  @HiveField(10)
   bool isFavorite;
-
-  @HiveField(11)
   String? category;
 
   Credential({
@@ -55,7 +29,7 @@ class Credential extends HiveObject {
     this.category,
   });
 
-  // Convert to Map for Firebase
+  // Convert to Map for Firestore
   Map<String, dynamic> toMap() {
     return {
       'id': id,
@@ -66,26 +40,35 @@ class Credential extends HiveObject {
       'website': website,
       'notes': notes,
       'iconUrl': iconUrl,
-      'createdAt': createdAt.toIso8601String(),
-      'updatedAt': updatedAt.toIso8601String(),
+      'createdAt': Timestamp.fromDate(createdAt),
+      'updatedAt': Timestamp.fromDate(updatedAt),
       'isFavorite': isFavorite,
       'category': category,
     };
   }
 
-  // Create from Map (Firebase)
-  factory Credential.fromMap(Map<String, dynamic> map) {
+  // Create from Map (Firestore Document)
+  factory Credential.fromMap(Map<String, dynamic> map, [String? docId]) {
+    DateTime parseDate(dynamic dateVal) {
+      if (dateVal is Timestamp) {
+        return dateVal.toDate();
+      } else if (dateVal is String) {
+        return DateTime.parse(dateVal);
+      }
+      return DateTime.now();
+    }
+
     return Credential(
-      id: map['id'],
-      appName: map['appName'],
-      profileName: map['profileName'],
-      username: map['username'],
-      encryptedPassword: map['encryptedPassword'],
+      id: docId ?? map['id'] ?? '',
+      appName: map['appName'] ?? '',
+      profileName: map['profileName'] ?? '',
+      username: map['username'] ?? '',
+      encryptedPassword: map['encryptedPassword'] ?? '',
       website: map['website'],
       notes: map['notes'],
       iconUrl: map['iconUrl'],
-      createdAt: DateTime.parse(map['createdAt']),
-      updatedAt: DateTime.parse(map['updatedAt']),
+      createdAt: parseDate(map['createdAt']),
+      updatedAt: parseDate(map['updatedAt']),
       isFavorite: map['isFavorite'] ?? false,
       category: map['category'],
     );

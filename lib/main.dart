@@ -3,7 +3,6 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:hive_flutter/hive_flutter.dart';
 
 import 'config/theme.dart';
 import 'firebase_options.dart';
@@ -18,12 +17,6 @@ import 'services/encryption_service.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // Initialize Hive for local storage
-  await Hive.initFlutter();
-  
-  // Register Hive adapters
-  Hive.registerAdapter(CredentialAdapter());
-  
   // Initialize Firebase on all platforms
   try {
     await Firebase.initializeApp(
@@ -32,7 +25,6 @@ void main() async {
     print('✅ Firebase initialized successfully');
   } catch (e) {
     print('⚠️ Firebase initialization failed: $e');
-    print('   Running in offline mode - local storage only');
   }
   
   // Initialize Services

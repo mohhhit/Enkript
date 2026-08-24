@@ -46,7 +46,9 @@ class CloudSyncService {
   DocumentReference? _getVaultMetadataDocument(String userId) {
     final firestoreInstance = firestore;
     if (firestoreInstance == null) return null;
-    return firestoreInstance.collection('users').doc(userId).collection('vault').doc('meta');
+    // Store metadata inside the credentials collection using a special ID
+    // This avoids "Missing or insufficient permissions" if rules only allow access to credentials collection
+    return firestoreInstance.collection('users').doc(userId).collection('credentials').doc('vault_metadata');
   }
 
   /// Sync a single credential to cloud
@@ -190,6 +192,7 @@ class CloudSyncService {
       print('📦 Firestore returned ${snapshot.docs.length} documents');
       
       final credentials = snapshot.docs
+          .where((doc) => doc.id != 'vault_metadata')
           .map((doc) {
             try {
               return Credential.fromMap(doc.data() as Map<String, dynamic>);
@@ -219,6 +222,7 @@ class CloudSyncService {
     
     return collection.snapshots().map((snapshot) {
       return snapshot.docs
+          .where((doc) => doc.id != 'vault_metadata')
           .map((doc) => Credential.fromMap(doc.data() as Map<String, dynamic>))
           .toList();
     });

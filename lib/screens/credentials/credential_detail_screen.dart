@@ -5,6 +5,7 @@ import '../../models/credential.dart';
 import '../../providers/vault_provider.dart';
 import '../../services/encryption_service.dart';
 import '../../services/biometric_service.dart';
+import '../../providers/auth_provider.dart';
 import 'add_credential_screen.dart';
 
 class CredentialDetailScreen extends StatefulWidget {
@@ -21,12 +22,87 @@ class _CredentialDetailScreenState extends State<CredentialDetailScreen> {
   String? _decryptedPassword;
   String? _passwordError;
 
+  Future<bool> _promptForMasterPassword() async {
+    final passwordController = TextEditingController();
+    bool obscurePassword = true;
+    String? error;
+    bool? isValid;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('Authentication Required'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text('Enter your master password to view this credential.'),
+              const SizedBox(height: 16),
+              TextField(
+                controller: passwordController,
+                obscureText: obscurePassword,
+                decoration: InputDecoration(
+                  labelText: 'Master Password',
+                  errorText: error,
+                  prefixIcon: const Icon(Icons.lock),
+                  suffixIcon: IconButton(
+                    icon: Icon(obscurePassword ? Icons.visibility : Icons.visibility_off),
+                    onPressed: () => setState(() => obscurePassword = !obscurePassword),
+                  ),
+                ),
+                onSubmitted: (value) async {
+                  isValid = await context.read<AuthProvider>().verifyMasterPassword(value);
+                  if (isValid == true && context.mounted) {
+                    Navigator.pop(context);
+                  } else if (context.mounted) {
+                    setState(() => error = 'Invalid master password');
+                  }
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                isValid = false;
+                Navigator.pop(context);
+              },
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                isValid = await context.read<AuthProvider>().verifyMasterPassword(passwordController.text);
+                if (isValid == true && context.mounted) {
+                  Navigator.pop(context);
+                } else if (context.mounted) {
+                  setState(() => error = 'Invalid master password');
+                }
+              },
+              child: const Text('Verify'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    return isValid ?? false;
+  }
+
   Future<void> _togglePasswordVisibility() async {
     if (!_isPasswordVisible) {
-      // Require biometric auth to view password
-      final authenticated = await BiometricService.instance.authenticate(
-        localizedReason: 'Authenticate to view password',
-      );
+      bool authenticated = false;
+      
+      if (BiometricService.instance.isAvailable) {
+        // Require biometric auth to view password
+        authenticated = await BiometricService.instance.authenticate(
+          localizedReason: 'Authenticate to view password',
+        );
+      } else {
+        // Fallback to master password
+        authenticated = await _promptForMasterPassword();
+      }
 
       if (!authenticated) {
         if (mounted) {

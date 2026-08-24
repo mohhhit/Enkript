@@ -1,6 +1,8 @@
 import 'package:local_auth/local_auth.dart';
 import 'package:flutter/services.dart';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
+
 class BiometricService {
   static final BiometricService _instance = BiometricService._internal();
   factory BiometricService() => _instance;
@@ -13,6 +15,12 @@ class BiometricService {
   List<BiometricType> _availableBiometrics = [];
 
   Future<void> initialize() async {
+    if (kIsWeb) {
+      print('🔐 Biometric Service: Bypassed on Web');
+      _isAvailable = false;
+      return;
+    }
+
     try {
       final canCheck = await _localAuth.canCheckBiometrics;
       final isSupported = await _localAuth.isDeviceSupported();

@@ -66,6 +66,8 @@ class EncryptionService {
       throw StateError('Encryption key missing');
     }
 
+    final ivString = _secureBox.get('encryption_iv') as String?;
+
     final wrapSalt = base64Encode(IV.fromSecureRandom(16).bytes);
     final wrapIv = IV.fromSecureRandom(16);
     final wrapKeyBytes = base64Decode(await deriveKeyFromPassword(password, wrapSalt));
@@ -77,6 +79,7 @@ class EncryptionService {
       'vaultKeyWrapSalt': wrapSalt,
       'vaultKeyWrapIv': base64Encode(wrapIv.bytes),
       'wrappedEncryptionKey': wrappedKey,
+      'vaultIv': ivString,
       'updatedAt': DateTime.now().toIso8601String(),
     };
   }
@@ -86,6 +89,9 @@ class EncryptionService {
     await _secureBox.put('vault_key_wrap_salt', metadata['vaultKeyWrapSalt']);
     await _secureBox.put('vault_key_wrap_iv', metadata['vaultKeyWrapIv']);
     await _secureBox.put('wrapped_encryption_key', metadata['wrappedEncryptionKey']);
+    if (metadata['vaultIv'] != null) {
+      await _secureBox.put('encryption_iv', metadata['vaultIv']);
+    }
 
     if (userId != null) {
       await CloudSyncService.instance.saveVaultMetadata(userId, metadata);
@@ -113,6 +119,14 @@ class EncryptionService {
       if (!_isInitialized) {
         await initialize();
       }
+      
+      // We have a valid local key. 
+      // Force an update to the cloud metadata to ensure the IV is backed up properly 
+      // (and to overwrite any corrupt metadata from web app).
+      if (userId != null) {
+        await bindMasterPassword(password, userId: userId);
+      }
+      
       return true;
     }
 
@@ -143,8 +157,19 @@ class EncryptionService {
     );
 
     await _storeEncryptionKey(unwrappedKey);
+    
+    final vaultIv = metadata?['vaultIv'] as String?;
+    if (vaultIv != null) {
+      await _secureBox.put('encryption_iv', vaultIv);
+      _iv = IV(base64Decode(vaultIv));
+    }
+    
+    final key = Key(base64Decode(unwrappedKey));
+    _encrypter = Encrypter(AES(key, mode: AESMode.cbc));
+    
     _encryptionKeyGeneratedThisSession = false;
-    await initialize();
+    _isInitialized = true;
+    
     return true;
   }
 

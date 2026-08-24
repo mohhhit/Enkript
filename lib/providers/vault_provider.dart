@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:hive/hive.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../models/credential.dart';
-import '../services/cloud_sync_service.dart';
 
 class VaultProvider extends ChangeNotifier {
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+
   List<Credential> _credentials = [];
   List<Credential> _filteredCredentials = [];
   String _searchQuery = '';
@@ -14,47 +17,62 @@ class VaultProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   String get searchQuery => _searchQuery;
 
-  /// Initialize and load credentials
+  // Helper to get the correct user's credentials collection
+  CollectionReference? get _credentialsRef {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) return null;
+    return _db.collection('users').doc(uid).collection('credentials');
+  }
+
+  /// Initialize and load credentials from Cloud Firestore
   Future<void> initialize() async {
     _isLoading = true;
+    notifyListeners();
 
     try {
-      // Open Hive box
-      final box = await Hive.openBox<Credential>('credentials');
-      _credentials = box.values.toList();
-      _filteredCredentials = List.from(_credentials);
+      final ref = _credentialsRef;
+      if (ref != null) {
+        final snapshot = await ref.get();
+        _credentials = snapshot.docs.map((doc) {
+          return Credential.fromMap(doc.data() as Map<String, dynamic>, doc.id);
+        }).toList();
+        _filteredCredentials = List.from(_credentials);
+        print('✅ Loaded ${_credentials.length} credentials from Firestore');
+      } else {
+        print('⚠️ User not authenticated. Cannot load credentials.');
+      }
     } catch (e) {
-      print('Error loading credentials: $e');
+      print('❌ Error loading credentials: $e');
     }
 
     _isLoading = false;
     notifyListeners();
   }
 
-  /// Add a new credential
+  /// Add a new credential to Firestore
   Future<void> addCredential(Credential credential) async {
     try {
-      final box = await Hive.openBox<Credential>('credentials');
-      await box.put(credential.id, credential);
+      final ref = _credentialsRef;
+      if (ref == null) throw Exception("User not authenticated");
+
+      await ref.doc(credential.id).set(credential.toMap());
+      
       _credentials.add(credential);
       _applyFilters();
       notifyListeners();
-      
-      // Sync to cloud in background (non-blocking)
-      CloudSyncService.instance.syncCredential(credential).catchError((e) {
-        print('Background sync error: $e');
-      });
     } catch (e) {
-      print('Error adding credential: $e');
+      print('❌ Error adding credential: $e');
       rethrow;
     }
   }
 
-  /// Update an existing credential
+  /// Update an existing credential in Firestore
   Future<void> updateCredential(Credential credential) async {
     try {
-      final box = await Hive.openBox<Credential>('credentials');
-      await box.put(credential.id, credential);
+      final ref = _credentialsRef;
+      if (ref == null) throw Exception("User not authenticated");
+
+      await ref.doc(credential.id).update(credential.toMap());
       
       final index = _credentials.indexWhere((c) => c.id == credential.id);
       if (index != -1) {
@@ -63,32 +81,24 @@ class VaultProvider extends ChangeNotifier {
       
       _applyFilters();
       notifyListeners();
-      
-      // Sync to cloud in background (non-blocking)
-      CloudSyncService.instance.syncCredential(credential).catchError((e) {
-        print('Background sync error: $e');
-      });
     } catch (e) {
-      print('Error updating credential: $e');
+      print('❌ Error updating credential: $e');
       rethrow;
     }
   }
 
-  /// Delete a credential
+  /// Delete a credential from Firestore
   Future<void> deleteCredential(String id) async {
     try {
-      final box = await Hive.openBox<Credential>('credentials');
-      await box.delete(id);
+      final ref = _credentialsRef;
+      if (ref == null) throw Exception("User not authenticated");
+
+      await ref.doc(id).delete();
       _credentials.removeWhere((c) => c.id == id);
       _applyFilters();
       notifyListeners();
-      
-      // Delete from cloud in background (non-blocking)
-      CloudSyncService.instance.deleteCredential(id).catchError((e) {
-        print('Background delete error: $e');
-      });
     } catch (e) {
-      print('Error deleting credential: $e');
+      print('❌ Error deleting credential: $e');
       rethrow;
     }
   }
@@ -132,111 +142,37 @@ class VaultProvider extends ChangeNotifier {
     await updateCredential(updated);
   }
 
-  /// Sync with cloud
+  /// Sync with cloud (Now redundant, just refreshes the list)
   Future<void> syncWithCloud() async {
-    _isLoading = true;
-    notifyListeners();
-
-    try {
-      await CloudSyncService.instance.syncAll(_credentials);
-      await initialize(); // Reload credentials
-    } catch (e) {
-      print('Error syncing with cloud: $e');
-    }
-
-    _isLoading = false;
-    notifyListeners();
+    await initialize();
   }
 
-  /// Download credentials from cloud and merge with local
+  /// Download credentials (Now redundant, just refreshes the list)
   Future<void> downloadFromCloud() async {
-    _isLoading = true;
-    notifyListeners();
-
-    try {
-      print('📥 Downloading credentials from cloud...');
-      
-      // Check if cloud is available
-      if (!CloudSyncService.instance.isFirebaseAvailable) {
-        print('ℹ️ Cloud sync not available - using local data only');
-        _isLoading = false;
-        notifyListeners();
-        return;
-      }
-      
-      // Check authentication
-      if (CloudSyncService.instance.auth?.currentUser == null) {
-        print('⚠️ User not authenticated - cannot download from cloud');
-        _isLoading = false;
-        notifyListeners();
-        return;
-      }
-      
-      final cloudCredentials = await CloudSyncService.instance.downloadAll();
-      print('📦 Downloaded ${cloudCredentials.length} credentials from cloud');
-      
-      if (cloudCredentials.isEmpty) {
-        print('ℹ️ No credentials found in cloud');
-        _isLoading = false;
-        notifyListeners();
-        return;
-      }
-
-      final box = await Hive.openBox<Credential>('credentials');
-      
-      // Merge cloud credentials with local
-      final Map<String, Credential> mergedMap = {};
-      
-      // Add all local credentials
-      for (final cred in _credentials) {
-        mergedMap[cred.id] = cred;
-      }
-      
-      // Merge cloud credentials (newer ones override)
-      for (final cloudCred in cloudCredentials) {
-        final localCred = mergedMap[cloudCred.id];
-        if (localCred == null) {
-          // New credential from cloud
-          mergedMap[cloudCred.id] = cloudCred;
-        } else {
-          // Keep the newer one
-          if (cloudCred.updatedAt.isAfter(localCred.updatedAt)) {
-            mergedMap[cloudCred.id] = cloudCred;
-          }
-        }
-      }
-      
-      // Save merged credentials to local storage
-      await box.clear();
-      for (final cred in mergedMap.values) {
-        await box.put(cred.id, cred);
-      }
-      
-      _credentials = mergedMap.values.toList();
-      _applyFilters();
-      
-      print('✅ Downloaded and merged ${cloudCredentials.length} credentials from cloud');
-      print('✅ Total credentials after merge: ${_credentials.length}');
-    } catch (e, stackTrace) {
-      print('❌ Error downloading from cloud: $e');
-      print('Stack trace: $stackTrace');
-    }
-
-    _isLoading = false;
-    notifyListeners();
+    await initialize();
   }
 
-  /// Clear all credentials
+  /// Clear all credentials from Firestore
   Future<void> clearAllCredentials() async {
     try {
-      final box = await Hive.openBox<Credential>('credentials');
-      await box.clear();
+      final ref = _credentialsRef;
+      if (ref == null) throw Exception("User not authenticated");
+
+      final snapshot = await ref.get();
+      
+      // Batch delete all documents
+      final batch = _db.batch();
+      for (var doc in snapshot.docs) {
+        batch.delete(doc.reference);
+      }
+      await batch.commit();
+
       _credentials.clear();
       _filteredCredentials.clear();
       notifyListeners();
-      print('✅ All credentials cleared');
+      print('✅ All credentials cleared from Firestore');
     } catch (e) {
-      print('Error clearing credentials: $e');
+      print('❌ Error clearing credentials: $e');
       rethrow;
     }
   }
@@ -244,9 +180,9 @@ class VaultProvider extends ChangeNotifier {
   /// Remove duplicate credentials
   Future<int> removeDuplicates() async {
     try {
-      final box = await Hive.openBox<Credential>('credentials');
-      
-      // Group credentials by app name, username, and profile name
+      final ref = _credentialsRef;
+      if (ref == null) throw Exception("User not authenticated");
+
       final Map<String, List<Credential>> groups = {};
       for (final cred in _credentials) {
         final key = '${cred.appName}|${cred.username}|${cred.profileName}'.toLowerCase();
@@ -254,20 +190,22 @@ class VaultProvider extends ChangeNotifier {
       }
       
       int removedCount = 0;
+      final batch = _db.batch();
       
-      // For each group, keep the most recent one and delete the rest
       for (final group in groups.values) {
         if (group.length > 1) {
-          // Sort by updatedAt, keep the newest
           group.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
           
-          // Delete all except the first (newest)
           for (int i = 1; i < group.length; i++) {
-            await box.delete(group[i].id);
+            batch.delete(ref.doc(group[i].id));
             _credentials.removeWhere((c) => c.id == group[i].id);
             removedCount++;
           }
         }
+      }
+      
+      if (removedCount > 0) {
+        await batch.commit();
       }
       
       _applyFilters();
@@ -276,7 +214,7 @@ class VaultProvider extends ChangeNotifier {
       print('✅ Removed $removedCount duplicate credentials');
       return removedCount;
     } catch (e) {
-      print('Error removing duplicates: $e');
+      print('❌ Error removing duplicates: $e');
       rethrow;
     }
   }
@@ -284,13 +222,11 @@ class VaultProvider extends ChangeNotifier {
   /// Apply filters to credentials
   void _applyFilters() {
     _filteredCredentials = _credentials.where((credential) {
-      // Search filter
       final matchesSearch = _searchQuery.isEmpty ||
           credential.appName.toLowerCase().contains(_searchQuery) ||
           credential.username.toLowerCase().contains(_searchQuery) ||
           credential.profileName.toLowerCase().contains(_searchQuery);
 
-      // Category filter
       final matchesCategory = _selectedCategory == null ||
           credential.category == _selectedCategory;
 
