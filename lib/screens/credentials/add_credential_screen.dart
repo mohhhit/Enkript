@@ -174,11 +174,14 @@ class _AddCredentialScreenState extends State<AddCredentialScreen> {
             ),
         ],
       ),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 800),
+          child: Form(
+            key: _formKey,
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
             TextFormField(
               controller: _appNameController,
               decoration: const InputDecoration(
@@ -288,8 +291,7 @@ class _AddCredentialScreenState extends State<AddCredentialScreen> {
               ),
             ),
           ],
-        ),
-      ),
+        )))),
     );
   }
 

@@ -62,6 +62,12 @@ class _CloudAuthScreenState extends State<CloudAuthScreen> {
       if (!mounted) return;
       
       if (!isMasterPasswordSet) {
+        if (!_isSignUp && context.read<VaultProvider>().credentials.isNotEmpty) {
+          // User has credentials but no vault metadata in cloud.
+          _showError('No vault metadata found in cloud. Please open your original device and tap "Sync Vault Metadata" in Settings.');
+          await authProvider.signOut();
+          return;
+        }
         // New user - go to master password setup
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (_) => const SetupScreen()),

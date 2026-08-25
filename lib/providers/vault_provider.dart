@@ -33,7 +33,9 @@ class VaultProvider extends ChangeNotifier {
       final ref = _credentialsRef;
       if (ref != null) {
         final snapshot = await ref.get();
-        _credentials = snapshot.docs.map((doc) {
+        _credentials = snapshot.docs
+            .where((doc) => doc.id != 'vault_metadata')
+            .map((doc) {
           return Credential.fromMap(doc.data() as Map<String, dynamic>, doc.id);
         }).toList();
         _filteredCredentials = List.from(_credentials);
@@ -160,10 +162,12 @@ class VaultProvider extends ChangeNotifier {
 
       final snapshot = await ref.get();
       
-      // Batch delete all documents
+      // Batch delete all documents except vault_metadata
       final batch = _db.batch();
       for (var doc in snapshot.docs) {
-        batch.delete(doc.reference);
+        if (doc.id != 'vault_metadata') {
+          batch.delete(doc.reference);
+        }
       }
       await batch.commit();
 

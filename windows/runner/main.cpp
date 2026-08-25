@@ -1,6 +1,11 @@
 #include <flutter/dart_project.h>
 #include <flutter/flutter_view_controller.h>
 #include <windows.h>
+#include <stdint.h>
+
+extern "C" {
+    int _Avx2WmemEnabled = 0;
+}
 
 #include "flutter_window.h"
 #include "utils.h"

@@ -227,9 +227,12 @@ class _CredentialDetailScreenState extends State<CredentialDetailScreen> {
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 800),
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
           _buildInfoCard(
             'App/Website',
             widget.credential.appName,
@@ -276,7 +279,7 @@ class _CredentialDetailScreenState extends State<CredentialDetailScreen> {
           const SizedBox(height: 24),
           _buildMetadataCard(),
         ],
-      ),
+      ))),
     );
   }
 

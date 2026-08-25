@@ -1,7 +1,7 @@
 import 'package:local_auth/local_auth.dart';
 import 'package:flutter/services.dart';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart';
 
 class BiometricService {
   static final BiometricService _instance = BiometricService._internal();
@@ -15,8 +15,8 @@ class BiometricService {
   List<BiometricType> _availableBiometrics = [];
 
   Future<void> initialize() async {
-    if (kIsWeb) {
-      print('🔐 Biometric Service: Bypassed on Web');
+    if (kIsWeb || defaultTargetPlatform == TargetPlatform.windows || defaultTargetPlatform == TargetPlatform.linux || defaultTargetPlatform == TargetPlatform.macOS) {
+      print('🔐 Biometric Service: Bypassed on Desktop/Web');
       _isAvailable = false;
       return;
     }

@@ -1,4 +1,4 @@
-import 'dart:convert';
+ï»¿import 'dart:convert';
 import 'package:encrypt/encrypt.dart';
 import 'package:crypto/crypto.dart';
 import 'package:hive/hive.dart';
@@ -23,7 +23,7 @@ class EncryptionService {
   }
 
   /// Initialize: open the Hive box and load the existing key if this device
-  /// was already set up. Does NOT generate a new key — key generation only
+  /// was already set up. Does NOT generate a new key â€” key generation only
   /// happens in [bindMasterPassword] for brand-new accounts.
   Future<void> initialize() async {
     if (_isInitialized) return;
@@ -43,7 +43,7 @@ class EncryptionService {
       print('?? Encryption key loaded from local storage');
     } else {
       _isInitialized = false;
-      print('?? No local vault key found — awaiting master password');
+      print('?? No local vault key found â€” awaiting master password');
     }
   }
 
@@ -162,7 +162,7 @@ class EncryptionService {
         iv: IV(base64Decode(wrapIvString)),
       );
 
-      final vaultIvString = metadata?['vaultIv'] as String?;
+      final vaultIvString = metadata?['vaultIv'] as String?; print("dY""? METADATA FETCHED: $metadata");
       final ivString = vaultIvString ?? base64Encode(IV.fromSecureRandom(16).bytes);
 
       // Cache everything locally for offline use.
