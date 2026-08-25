@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 
 import 'config/theme.dart';
 import 'firebase_options.dart';
@@ -16,6 +17,9 @@ import 'services/encryption_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize Hive with the app's document directory (required on native platforms)
+  await Hive.initFlutter();
   
   // Initialize Firebase on all platforms
   try {

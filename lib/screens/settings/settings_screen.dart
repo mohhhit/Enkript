@@ -4,6 +4,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/vault_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../services/biometric_service.dart';
+import '../../services/encryption_service.dart';
 import '../auth/cloud_auth_screen.dart';
 import '../auth/login_screen.dart';
 
@@ -91,13 +92,66 @@ class SettingsScreen extends StatelessWidget {
 
   Widget _buildChangeMasterPasswordTile(BuildContext context) {
     return ListTile(
-      leading: const Icon(Icons.vpn_key),
-      title: const Text('Change Master Password'),
-      subtitle: const Text('Update your master password'),
-      onTap: () {
-        // TODO: Implement change master password
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Feature coming soon')),
+      leading: const Icon(Icons.sync_lock),
+      title: const Text('Sync Vault Metadata'),
+      subtitle: const Text('Fix decryption issues across devices'),
+      onTap: () async {
+        final passwordController = TextEditingController();
+        bool obscurePassword = true;
+        String? error;
+        bool? isValid;
+
+        await showDialog<void>(
+          context: context,
+          builder: (context) => StatefulBuilder(
+            builder: (context, setState) => AlertDialog(
+              title: const Text('Sync Vault'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Enter your master password to push your encryption key to the cloud.'),
+                  TextField(
+                    controller: passwordController,
+                    obscureText: obscurePassword,
+                    decoration: InputDecoration(
+                      labelText: 'Master Password',
+                      errorText: error,
+                      suffixIcon: IconButton(
+                        icon: Icon(obscurePassword ? Icons.visibility : Icons.visibility_off),
+                        onPressed: () => setState(() => obscurePassword = !obscurePassword),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    isValid = await context.read<AuthProvider>().verifyMasterPassword(passwordController.text);
+                    if (isValid == true) {
+                      final userId = context.read<AuthProvider>().userId;
+                      if (userId != null) {
+                        await EncryptionService.instance.bindMasterPassword(passwordController.text, userId: userId);
+                        if (context.mounted) {
+                          Navigator.pop(context);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Vault metadata successfully synced!'), backgroundColor: Colors.green),
+                          );
+                        }
+                      }
+                    } else {
+                      setState(() => error = 'Invalid master password');
+                    }
+                  },
+                  child: const Text('Sync'),
+                ),
+              ],
+            ),
+          ),
         );
       },
     );

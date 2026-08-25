@@ -19,7 +19,9 @@ class CredentialCard extends StatelessWidget {
         leading: CircleAvatar(
           backgroundColor: Theme.of(context).colorScheme.primaryContainer,
           child: Text(
-            credential.profileName[0].toUpperCase(),
+            credential.profileName.isNotEmpty 
+                ? credential.profileName[0].toUpperCase()
+                : (credential.appName.isNotEmpty ? credential.appName[0].toUpperCase() : '?'),
             style: TextStyle(
               color: Theme.of(context).colorScheme.onPrimaryContainer,
               fontWeight: FontWeight.bold,

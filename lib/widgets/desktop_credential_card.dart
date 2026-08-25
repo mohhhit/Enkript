@@ -45,7 +45,9 @@ class _DesktopCredentialCardState extends State<DesktopCredentialCard> {
                   ),
                   child: Center(
                     child: Text(
-                      widget.credential.profileName[0].toUpperCase(),
+                      widget.credential.profileName.isNotEmpty 
+                          ? widget.credential.profileName[0].toUpperCase()
+                          : (widget.credential.appName.isNotEmpty ? widget.credential.appName[0].toUpperCase() : '?'),
                       style: TextStyle(
                         color: Theme.of(context).colorScheme.onPrimaryContainer,
                         fontWeight: FontWeight.bold,

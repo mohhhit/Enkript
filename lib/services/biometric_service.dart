@@ -82,12 +82,8 @@ class BiometricService {
       
       final result = await _localAuth.authenticate(
         localizedReason: localizedReason,
-        options: AuthenticationOptions(
-          stickyAuth: true,
-          biometricOnly: true, // Only use biometrics (fingerprint/face)
-          useErrorDialogs: true,
-          sensitiveTransaction: false, // Less restrictive for better compatibility
-        ),
+        biometricOnly: true, // Only use biometrics (fingerprint/face)
+        sensitiveTransaction: false, // Less restrictive for better compatibility
       );
       print('✅ Biometric auth result: $result');
       return result;
